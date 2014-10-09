@@ -18,6 +18,11 @@ class LaravelDoctrineServiceProvider extends ServiceProvider
      */
     protected $defer = false;
 
+    /**
+     * List of service providers to initialise.
+     *
+     * @var array
+     */
     private $serviceProviders = [
         'ConfigurationServiceProvider',
         'CacheManagerServiceProvider',
@@ -34,6 +39,9 @@ class LaravelDoctrineServiceProvider extends ServiceProvider
         $this->package('mitchellvanw/laravel-doctrine', 'doctrine', __DIR__ . '/..');
     }
 
+    /**
+     * Register the required service providers.
+     */
     public function register()
     {
         foreach ($this->serviceProviders as $provider) {

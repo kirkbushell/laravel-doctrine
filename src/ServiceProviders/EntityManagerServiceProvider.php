@@ -8,6 +8,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Events;
 use Doctrine\ORM\Mapping\ClassMetadataFactory;
 use Doctrine\ORM\Tools\Setup;
+use Event;
 use Illuminate\Auth\AuthManager;
 use Illuminate\Support\ServiceProvider;
 use Mitch\LaravelDoctrine\CacheManager;
@@ -55,28 +56,18 @@ class EntityManagerServiceProvider extends ServiceProvider
     {
         $this->app->singleton(EntityManager::class, function ($app) {
             $config = $app['config']['doctrine::doctrine'];
-            $metadata = Setup::createAnnotationMetadataConfiguration(
-                $config['metadata'],
-                $app['config']['app.debug'],
-                $config['proxy']['directory'],
-                $app[CacheManager::class]->getCache($config['cache_provider']),
-                $config['simple_annotations']
-            );
-            $metadata->addFilter('trashed', TrashedFilter::class);
-            $metadata->setAutoGenerateProxyClasses($config['proxy']['auto_generate']);
-            $metadata->setDefaultRepositoryClassName($config['repository']);
-            $metadata->setSQLLogger($config['logger']);
 
-            if (isset($config['proxy']['namespace']))
-                $metadata->setProxyNamespace($config['proxy']['namespace']);
+            $metadata = $this->buildMetaDataConfiguration($config);
 
             $eventManager = new EventManager;
             $eventManager->addEventListener(Events::loadClassMetadata, new TablePrefixListener($this->connection->prefix));
             $eventManager->addEventListener(Events::onFlush, new SoftDeletableListener);
             $entityManager = EntityManager::create($this->mapLaravelToDoctrineConfig($app['config']), $metadata, $eventManager);
             $entityManager->getFilters()->enable('trashed');
+
             return $entityManager;
         });
+
         $this->app->singleton(EntityManagerInterface::class, EntityManager::class);
     }
 
@@ -117,5 +108,37 @@ class EntityManagerServiceProvider extends ServiceProvider
         $this->connectionConfiguration = $config["database.connections.{$default}"];
 
         return App::make(DriverMapper::class)->map($this->connectionConfiguration);
+    }
+
+    /**
+     * Constructs the configuration object required for the entity manager.
+     *
+     * @param array $config
+     * @return \Doctrine\ORM\Configuration
+     * @throws \Doctrine\ORM\ORMException
+     */
+    private function buildMetaDataConfiguration(array $config)
+    {
+        $metadata = Setup::createAnnotationMetadataConfiguration(
+            $config['metadata'],
+            $this->app['config']['app.debug'],
+            $config['proxy']['directory'],
+            $this->app[CacheManager::class]->getCache($config['cache_provider']),
+            $config['simple_annotations']
+        );
+
+        $metadata->addFilter('trashed', TrashedFilter::class);
+        $metadata->setAutoGenerateProxyClasses($config['proxy']['auto_generate']);
+        $metadata->setDefaultRepositoryClassName($config['repository']);
+        $metadata->setSQLLogger($config['logger']);
+
+        if (isset($config['proxy']['namespace'])) {
+            $metadata->setProxyNamespace($config['proxy']['namespace']);
+        }
+
+        // Fire off an event so that others can hook into the configuration object
+        Event::fire('doctrine.metadata.configuration', [$metadata]);
+
+        return $metadata;
     }
 }
